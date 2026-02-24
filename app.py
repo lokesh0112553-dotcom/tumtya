@@ -26,7 +26,7 @@ def check_endpoint():
         original_url = f"https://wizs-garage.onrender.com/wizard.php?site={site}&cc={cc}&proxy={proxy}"  
         
         # Send request to original endpoint with timeout
-        response = requests.get(original_url, timeout=30)  
+        response = requests.get(original_url, timeout=15)  
         response_data = response.json()  
         
         # Create transformed response
