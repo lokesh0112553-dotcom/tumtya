@@ -5,7 +5,7 @@ import os
 app = Flask(__name__)
 
 # Get port from environment variable (Render provides this)
-PORT = int(os.environ.get('PORT', 7000))
+PORT = int(os.environ.get('PORT', 8080))
 
 @app.route('/check', methods=['GET'])
 def check_endpoint():
