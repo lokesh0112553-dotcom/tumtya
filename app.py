@@ -18,8 +18,7 @@ def check_endpoint():
     if not all([site, cc, proxy]):  
         return jsonify({  
             "error": "Missing required parameters. Please provide site, cc, and proxy.",
-            "example": "/check?site=example.com&cc=4111111111111111|12|25|123&proxy=127.0.0.1:8080",
-            "Dev": "@NIKSHACKS"
+            "example": "/check?site=example.com&cc=4111111111111111|12|25|123&proxy=127.0.0.1:8080"
         }), 400  
     
     try:  
@@ -74,9 +73,6 @@ def check_endpoint():
         if "Gateway" not in transformed_response:
             transformed_response["Gateway"] = "Unknown"
         
-        # Add Dev field
-        transformed_response["Dev"] = "@NIKSHACKS"
-        
         # Create final ordered response
         final_response = {}
         
@@ -86,13 +82,10 @@ def check_endpoint():
             if field in transformed_response:
                 final_response[field] = transformed_response[field]
         
-        # Add any remaining fields (except Dev)
+        # Add any remaining fields
         for key, value in transformed_response.items():
-            if key not in field_order and key != "Dev":
+            if key not in field_order:
                 final_response[key] = value
-        
-        # Add Dev at the end
-        final_response["Dev"] = "@NIKSHACKS"
         
         return jsonify(final_response)
         
@@ -102,8 +95,7 @@ def check_endpoint():
             "Gateway": "Unknown",
             "Price": "0.0",
             "Response": "Request timeout",
-            "cc": cc,
-            "Dev": "@NIKSHACKS"
+            "cc": cc
         }), 500
     except requests.exceptions.RequestException as e:
         return jsonify({
@@ -111,8 +103,7 @@ def check_endpoint():
             "Gateway": "Unknown",
             "Price": "0.0",
             "Response": f"Request failed: {str(e)}",
-            "cc": cc,
-            "Dev": "@NIKSHACKS"
+            "cc": cc
         }), 500
     except ValueError as e:
         return jsonify({
@@ -120,8 +111,7 @@ def check_endpoint():
             "Gateway": "Unknown",
             "Price": "0.0",
             "Response": "Invalid response from server",
-            "cc": cc,
-            "Dev": "@NIKSHACKS"
+            "cc": cc
         }), 500
     except Exception as e:
         return jsonify({
@@ -129,8 +119,7 @@ def check_endpoint():
             "Gateway": "Unknown",
             "Price": "0.0",
             "Response": f"Unexpected error: {str(e)}",
-            "cc": cc,
-            "Dev": "@NIKSHACKS"
+            "cc": cc
         }), 500
 
 @app.route('/', methods=['GET'])
@@ -145,8 +134,7 @@ def home():
             "cc": "Credit card details (format: number|month|year|cvv)",
             "proxy": "Proxy server (format: ip:port)"
         },
-        "example": f"{request.host_url}check?site=example.com&cc=4111111111111111|12|25|123&proxy=127.0.0.1:8080",
-        "Dev": "@NIKSHACKS"
+        "example": f"{request.host_url}check?site=example.com&cc=4111111111111111|12|25|123&proxy=127.0.0.1:8080"
     })
 
 @app.route('/health', methods=['GET'])
