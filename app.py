@@ -10,12 +10,12 @@ PORT = int(os.environ.get('PORT', 7000))
 
 # List of APIs to use
 APIS = [
-    "https://bro-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}"
-    "https://bro1-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}
+    "https://bro-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}",
+    "https://bro1-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}",
     "https://wizs-garage.onrender.com/wizard.php?site={site}&cc={cc}&proxy={proxy}",
-    "https://urls-pot-taking-sells.trycloudflare.com/index.php?site={site}&cc={cc}&proxy={proxy}"
-    "https://bro-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}"
-    "https://bro1-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}
+    "https://urls-pot-taking-sells.trycloudflare.com/index.php?site={site}&cc={cc}&proxy={proxy}",
+    "https://bro-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}",
+    "https://bro1-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}"
 ]
 
 @app.route('/check', methods=['GET'])
